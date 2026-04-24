@@ -2,83 +2,108 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
-import time
 
-st.set_page_config(page_title="SCADA Eco-Sim Smart-Plant", layout="wide")
+st.set_page_config(page_title="SCADA Eco-Sim v3.0", layout="wide")
 
-st.title("🚀 SCADA Eco-Sim: Simulación de Resiliencia")
-st.markdown("""
-Esta simulación muestra la **Parte C** de la guía: la respuesta del sistema ante una 
-**caída del 40% del caudal** (escenario de sequía o fallo de captación).
-""")
+# Título y encabezado profesional
+st.title("🛡️ SCADA Eco-Sim: Control Inteligente de ETAP")
+st.markdown("---")
 
-# --- SIDEBAR: SENSORES ---
-st.sidebar.header("Panel de Sensores")
-caudal_nominal = st.sidebar.slider("Caudal Nominal (m³/h)", 100, 500, 300)
-turbidez = st.sidebar.slider("Turbidez (NTU)", 0, 150, 20)
+# --- SIDEBAR: CONTROL DE SENSORES EN TIEMPO REAL ---
+st.sidebar.header("🕹️ Simulación de Sensores")
+q_input = st.sidebar.slider("Caudal de Entrada (Q) [m³/h]", 0, 500, 300)
+t_input = st.sidebar.slider("Turbidez Detectada (T) [NTU]", 0, 150, 20)
 
-# --- LÓGICA DE SIMULACIÓN DE NIVEL ---
-def simular_caida_caudal(caudal_base):
+# --- LÓGICA DE PROCESAMIENTO (REGLAS DE INGENIERÍA) ---
+umbral_critico = 80
+es_emergencia = t_input > umbral_critico
+
+# Regla A: Dosificación proporcional (Q * T) / 100
+# Si hay emergencia, la dosificación se detiene por seguridad
+dosificacion = 0.0 if es_emergencia else (q_input * t_input) / 100
+
+# Regla B: Consumo proyectado (Eficiencia Energética)
+# El consumo es constante pero se muestra el ahorro del 15% aplicado
+consumo_base = 250.0 
+consumo_proyectado = consumo_base * 0.85 # Aplicando el ahorro del 15% solicitado
+
+# --- GENERACIÓN DE LA CURVA DE RESILIENCIA ---
+def generar_curva(caudal_act, emergencia):
     minutos = np.arange(0, 61, 1)
-    nivel = []
-    caudal_real = []
-    actual_nivel = 70.0 # Nivel inicial 70%
-    consumo_ciudad = caudal_base / 2 # La ciudad consume la mitad del nominal
+    niveles = []
+    nivel_actual = 65.0
     
     for t in minutos:
-        # A los 10 minutos cae el caudal un 40%
-        if t < 10:
-            q_t = caudal_base
-        elif t < 30:
-            q_t = caudal_base * 0.6 # Caída del 40%
-        else:
-            # Recuperación parcial o estabilización mediante VFD
-            q_t = caudal_base * 0.85 
+        # Simulación de caída del 40% a mitad del tiempo
+        caudal_t = caudal_act
+        if 15 < t < 40:
+            caudal_t = caudal_act * 0.6
         
-        # El nivel cambia: (Entrada - Salida) / Factor de capacidad
-        cambio = (q_t - consumo_ciudad) / 20
-        actual_nivel += cambio
-        actual_nivel = max(min(actual_nivel, 100), 0)
+        # Si hay emergencia por turbidez, la entrada al tanque es 0 (Bypass activo)
+        entrada = 0 if emergencia else (caudal_t / 15)
+        salida = consumo_proyectado / 150
         
-        nivel.append(actual_nivel)
-        caudal_real.append(q_t)
-        
-    return minutos, nivel, caudal_real
+        nivel_actual += (entrada - salida)
+        nivel_actual = max(min(nivel_actual, 100), 0)
+        niveles.append(nivel_actual)
+    return minutos, niveles
 
-minutos, niveles, caudales = simular_caida_caudal(caudal_nominal)
+minutos, niveles = generar_curva(q_input, es_emergencia)
 
-# --- VISUALIZACIÓN: GRÁFICO DE RESILIENCIA ---
+# --- VISUALIZACIÓN DE PARÁMETROS (KPIs) ---
+# Estos son los parámetros que solicitaste que aparecieran junto a la gráfica
+col1, col2, col3, col4 = st.columns(4)
+
+with col1:
+    st.metric("🌊 Caudal Entrada", f"{q_input} m³/h")
+with col2:
+    color_t = "normal" if not es_emergencia else "inverse"
+    st.metric("👁️ Turbidez Detectada", f"{t_input} NTU", delta="CRÍTICO" if es_emergencia else None, delta_color=color_t)
+with col3:
+    st.metric("🧪 Dosif. Químicos", f"{dosificacion:.2f} L/h")
+with col4:
+    st.metric("⚡ Consumo Proyectado", f"{consumo_proyectado:.1f} kWh", delta="-15% Ahorro")
+
+# --- GRÁFICA DE CONTROL DE NIVEL ---
 fig = go.Figure()
 
-# Línea de Nivel
-fig.add_trace(go.Scatter(x=minutos, y=niveles, name="Nivel del Tanque (%)",
-                         line=dict(color='royalblue', width=4)))
+# Sombreado de zonas críticas
+fig.add_hrect(y0=0, y1=10, fillcolor="red", opacity=0.1, annotation_text="SEQUÍA EXTREMA")
+fig.add_hrect(y0=10, y1=30, fillcolor="orange", opacity=0.1, annotation_text="NIVEL MÍNIMO")
 
-# Línea de Caudal (Eje secundario opcional, aquí lo ponemos en el mismo para ver la relación)
-fig.add_trace(go.Scatter(x=minutos, y=[(c/caudal_nominal)*100 for c in caudales], 
-                         name="Caudal Entrada (% del nominal)",
-                         line=dict(color='firebrick', width=2, dash='dot')))
+fig.add_trace(go.Scatter(
+    x=minutos, 
+    y=niveles, 
+    mode='lines',
+    name='Nivel Tanque Tratada',
+    line=dict(color='#0072B2', width=4),
+    fill='tozeroy'
+))
 
 fig.update_layout(
-    title="Curva de Resiliencia: Estabilización tras Caída de Caudal (40%)",
-    xaxis_title="Tiempo (minutos)",
-    yaxis_title="Porcentaje (%)",
+    title="Análisis de Resiliencia: Curva de Nivel vs Eventos de Caudal",
+    xaxis_title="Tiempo de Operación (minutos)",
+    yaxis_title="Nivel del Depósito (%)",
+    yaxis=dict(range=[0, 105]),
     template="plotly_white",
-    hovermode="x unified"
+    height=500
 )
 
 st.plotly_chart(fig, use_container_width=True)
 
-# --- INDICADORES KPI ---
-col1, col2, col3 = st.columns(3)
-with col1:
-    st.metric("Estado del Sistema", "RESILIENTE" if niveles[-1] > 20 else "CRÍTICO", delta=None)
-with col2:
-    st.metric("Nivel Final Tanque", f"{round(niveles[-1], 1)} %")
-with col3:
-    st.metric("Ahorro Energético (Regla B)", "15%", "-1.500 kWh")
+# --- ALERTAS DEL SISTEMA ---
+if es_emergencia:
+    st.error(f"🚨 ALERTA DE CALIDAD: Turbidez ({t_input} NTU) por encima del umbral. Válvula de entrada CERRADA. Bypass a Tanque de Seguridad activo.")
+elif niveles[-1] < 10:
+    st.warning("🚨 ALERTA DE SUMINISTRO: Nivel de depósito por debajo del 10%. Riesgo de desabastecimiento urbano.")
+else:
+    st.success("✅ Sistema operando dentro de los parámetros nominales.")
 
-# --- TABLA DE DATOS PARA EL DOSSIER ---
-if st.checkbox("Mostrar datos de la simulación para el reporte"):
-    df_sim = pd.DataFrame({"Minuto": minutos, "Nivel (%)": niveles, "Caudal (m3/h)": caudales})
-    st.dataframe(df_sim)
+# --- EXPORTACIÓN PARA DOSSIER ---
+if st.button("Generar Resumen para Informe Ejecutivo"):
+    st.write("### Resumen de Reglas Aplicadas")
+    st.table(pd.DataFrame({
+        "Parámetro": ["Ahorro Energético", "Lógica Dosificación", "Seguridad por Turbidez"],
+        "Estado": ["Activo (8.500 kWh/mes)", f"Dinámica ({dosificacion:.2f} L/h)", "Bypass Automático"],
+        "Resultado": ["15% reducción", "Optimización Químicos", "Protección de Filtros"]
+    }))
