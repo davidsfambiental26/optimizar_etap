@@ -1,85 +1,84 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import datetime
+import plotly.graph_objects as go
+import time
 
-# Configuración de página para que se adapte a cualquier pantalla
-st.set_page_config(
-    page_title="SCADA Eco-Sim | ETAP Smart",
-    page_icon="💧",
-    layout="wide"
+st.set_page_config(page_title="SCADA Eco-Sim Smart-Plant", layout="wide")
+
+st.title("🚀 SCADA Eco-Sim: Simulación de Resiliencia")
+st.markdown("""
+Esta simulación muestra la **Parte C** de la guía: la respuesta del sistema ante una 
+**caída del 40% del caudal** (escenario de sequía o fallo de captación).
+""")
+
+# --- SIDEBAR: SENSORES ---
+st.sidebar.header("Panel de Sensores")
+caudal_nominal = st.sidebar.slider("Caudal Nominal (m³/h)", 100, 500, 300)
+turbidez = st.sidebar.slider("Turbidez (NTU)", 0, 150, 20)
+
+# --- LÓGICA DE SIMULACIÓN DE NIVEL ---
+def simular_caida_caudal(caudal_base):
+    minutos = np.arange(0, 61, 1)
+    nivel = []
+    caudal_real = []
+    actual_nivel = 70.0 # Nivel inicial 70%
+    consumo_ciudad = caudal_base / 2 # La ciudad consume la mitad del nominal
+    
+    for t in minutos:
+        # A los 10 minutos cae el caudal un 40%
+        if t < 10:
+            q_t = caudal_base
+        elif t < 30:
+            q_t = caudal_base * 0.6 # Caída del 40%
+        else:
+            # Recuperación parcial o estabilización mediante VFD
+            q_t = caudal_base * 0.85 
+        
+        # El nivel cambia: (Entrada - Salida) / Factor de capacidad
+        cambio = (q_t - consumo_ciudad) / 20
+        actual_nivel += cambio
+        actual_nivel = max(min(actual_nivel, 100), 0)
+        
+        nivel.append(actual_nivel)
+        caudal_real.append(q_t)
+        
+    return minutos, nivel, caudal_real
+
+minutos, niveles, caudales = simular_caida_caudal(caudal_nominal)
+
+# --- VISUALIZACIÓN: GRÁFICO DE RESILIENCIA ---
+fig = go.Figure()
+
+# Línea de Nivel
+fig.add_trace(go.Scatter(x=minutos, y=niveles, name="Nivel del Tanque (%)",
+                         line=dict(color='royalblue', width=4)))
+
+# Línea de Caudal (Eje secundario opcional, aquí lo ponemos en el mismo para ver la relación)
+fig.add_trace(go.Scatter(x=minutos, y=[(c/caudal_nominal)*100 for c in caudales], 
+                         name="Caudal Entrada (% del nominal)",
+                         line=dict(color='firebrick', width=2, dash='dot')))
+
+fig.update_layout(
+    title="Curva de Resiliencia: Estabilización tras Caída de Caudal (40%)",
+    xaxis_title="Tiempo (minutos)",
+    yaxis_title="Porcentaje (%)",
+    template="plotly_white",
+    hovermode="x unified"
 )
 
-# Estilos CSS para simular una estética industrial
-st.markdown("""
-    <style>
-    .main { background-color: #f0f2f6; }
-    .stMetric { background-color: #ffffff; padding: 15px; border-radius: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
-    </style>
-    """, unsafe_allow_html=True)
+st.plotly_chart(fig, use_container_width=True)
 
-st.title("🌊 SCADA Eco-Sim: Smart-Plant ETAP")
-st.info("Sistema de Control y Adquisición de Datos - Oficina Técnica de Ingeniería")
-
-# --- SIDEBAR: CONTROLES ---
-st.sidebar.header("🕹️ Panel de Simulación")
-caudal = st.sidebar.slider("Caudal de Entrada (Q) [m3/h]", 0, 500, 250)
-turbidez = st.sidebar.slider("Turbidez (T) [NTU]", 0, 150, 20)
-tarifa_valle = st.sidebar.toggle("Horario Valle (Bajo Consumo)", value=True)
-
-# --- LÓGICA DE CONTROL (Basada en la Guía E3) ---
-umbral_critico = 80
-estado_valvula = "ABIERTA"
-alerta = False
-
-if turbidez > umbral_critico:
-    estado_valvula = "CERRADA (Desvío a Tanque Seguridad)"
-    alerta = True
-    dosificacion = 0
-else:
-    # Lógica proporcional: Q x T
-    dosificacion = (caudal * turbidez) / 100
-
-# Cálculo de Eficiencia Energética (Parte B)
-consumo_base = 10000 
-consumo_actual = 8200 if tarifa_valle else 10000
-
-# --- DASHBOARD PRINCIPAL ---
+# --- INDICADORES KPI ---
 col1, col2, col3 = st.columns(3)
-
 with col1:
-    st.metric("Caudal de Entrada", f"{caudal} m³/h")
-    st.write(f"**Válvula:** `{estado_valvula}`")
-    if alerta:
-        st.error("🚨 CRÍTICO: Turbidez fuera de rango")
-
+    st.metric("Estado del Sistema", "RESILIENTE" if niveles[-1] > 20 else "CRÍTICO", delta=None)
 with col2:
-    st.metric("Turbidez detectada", f"{turbidez} NTU")
-    # Barra visual de nivel de suciedad
-    st.progress(min(turbidez / 150, 1.0))
-
+    st.metric("Nivel Final Tanque", f"{round(niveles[-1], 1)} %")
 with col3:
-    st.metric("Dosificación Químicos", f"{dosificacion:.2f} L/h")
-    st.metric("Consumo Proyectado", f"{consumo_actual} kWh/mes", 
-              delta=f"-{consumo_base - consumo_actual} kWh" if tarifa_valle else None)
+    st.metric("Ahorro Energético (Regla B)", "15%", "-1.500 kWh")
 
-# --- GRÁFICO DE RESILIENCIA (Parte C) ---
-st.divider()
-st.subheader("📊 Monitoreo de Resiliencia (Simulación de Sequía)")
-data = pd.DataFrame({
-    'Minutos': np.arange(60),
-    'Nivel Tanque (%)': np.random.uniform(85, 95, 60)
-})
-# Simular caída si el caudal es bajo
-if caudal < 150:
-    data['Nivel Tanque (%)'] = data['Nivel Tanque (%)'] - 20
-    st.warning("⚠️ Detectada baja presión por sequía. Ajustando Variadores de Frecuencia.")
-
-st.line_chart(data, x='Minutos', y='Nivel Tanque (%)')
-
-# --- REPORTE DE SOSTENIBILIDAD (Parte D) ---
-with st.expander("🍀 Ver Informe de Impacto Ambiental"):
-    ahorro = consumo_base - consumo_actual
-    co2 = ahorro * 0.25
-    st.write(f"**Reducción de Huella de Carbono:** {co2} kg de CO2/mes")
-    st.write("**Economía Circular:** Optimización de lodos mediante dosificación precisa.")
+# --- TABLA DE DATOS PARA EL DOSSIER ---
+if st.checkbox("Mostrar datos de la simulación para el reporte"):
+    df_sim = pd.DataFrame({"Minuto": minutos, "Nivel (%)": niveles, "Caudal (m3/h)": caudales})
+    st.dataframe(df_sim)
