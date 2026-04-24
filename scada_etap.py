@@ -104,4 +104,28 @@ elif 10 < nivel_f <= 30:
 elif t_input > umbral_turbidez:
     st.error(f"🛑 CALIDAD: Válvula CERRADA. Turbidez fuera de rango ({t_input} NTU).")
 else:
-    st.success(
+    st.success(f"✅ OPERACIÓN NORMAL: Suministro estable al {nivel_f}%.")
+
+# --- 4. INFORME EJECUTIVO ---
+st.markdown("---")
+st.header("📋 Informe Final de Operación")
+inf1, inf2, inf3 = st.columns(3)
+
+with inf1:
+    st.write("**Estatus de Suministro**")
+    if nivel_f <= 30:
+        st.write(f"⚠️ **Alerta:** Nivel insuficiente para demanda prolongada.")
+    else:
+        st.write(f"✅ **Estado:** Depósito con reserva adecuada.")
+    st.write(f"- Nivel Final: {nivel_f}%")
+
+with inf2:
+    st.write("**Estatus Energético**")
+    ahorro_total = 14.5 - cons_actual
+    st.write(f"- Ahorro: {ahorro_total:.2f} kWh/h")
+    st.write(f"- Cumplimiento 15%: {'SÍ' if (ahorro_total/14.5)>0.15 else 'NO'}")
+
+with inf3:
+    st.write("**Recomendaciones Técnicas**")
+    if nivel_f <= 30: st.write("❗ PRIORIDAD: Abrir válvulas de captación secundaria.")
+    if lavado_req: st.write("❗ Filtros: Ciclo de limpieza en curso.")
