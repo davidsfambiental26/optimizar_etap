@@ -1,73 +1,85 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import time
+import datetime
 
-# Configuración de la página
-st.set_page_config(page_title="SCADA Eco-Sim: Smart-Plant ETAP", layout="wide")
+# Configuración de página para que se adapte a cualquier pantalla
+st.set_page_config(
+    page_title="SCADA Eco-Sim | ETAP Smart",
+    page_icon="💧",
+    layout="wide"
+)
 
-st.title("🌊 SCADA Eco-Sim: Optimización Inteligente ETAP")
-st.subheader("Panel de Control de Oficina Técnica de Ingeniería")
+# Estilos CSS para simular una estética industrial
+st.markdown("""
+    <style>
+    .main { background-color: #f0f2f6; }
+    .stMetric { background-color: #ffffff; padding: 15px; border-radius: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+    </style>
+    """, unsafe_allow_html=True)
 
-# --- SIDEBAR: CONTROLES DE SIMULACIÓN ---
-st.sidebar.header("Configuración de Sensores")
+st.title("🌊 SCADA Eco-Sim: Smart-Plant ETAP")
+st.info("Sistema de Control y Adquisición de Datos - Oficina Técnica de Ingeniería")
+
+# --- SIDEBAR: CONTROLES ---
+st.sidebar.header("🕹️ Panel de Simulación")
 caudal = st.sidebar.slider("Caudal de Entrada (Q) [m3/h]", 0, 500, 250)
 turbidez = st.sidebar.slider("Turbidez (T) [NTU]", 0, 150, 20)
-tarifa_valle = st.sidebar.checkbox("Activar Horario Valle (Tarifa Económica)", value=True)
+tarifa_valle = st.sidebar.toggle("Horario Valle (Bajo Consumo)", value=True)
 
-# --- LÓGICA DEL ALGORITMO (Parte A y B) ---
+# --- LÓGICA DE CONTROL (Basada en la Guía E3) ---
 umbral_critico = 80
-dosificacion = (caudal * turbidez) / 100  # Lógica proporcional
 estado_valvula = "ABIERTA"
-alerta_seguridad = False
+alerta = False
 
 if turbidez > umbral_critico:
     estado_valvula = "CERRADA (Desvío a Tanque Seguridad)"
-    alerta_seguridad = True
+    alerta = True
     dosificacion = 0
+else:
+    # Lógica proporcional: Q x T
+    dosificacion = (caudal * turbidez) / 100
 
-# Ahorro energético (Parte B)
-objetivo_ahorro = 8500  # kWh/mes
-consumo_actual = 10000 if not tarifa_valle else 8200
+# Cálculo de Eficiencia Energética (Parte B)
+consumo_base = 10000 
+consumo_actual = 8200 if tarifa_valle else 10000
 
-# --- INTERFAZ PRINCIPAL ---
+# --- DASHBOARD PRINCIPAL ---
 col1, col2, col3 = st.columns(3)
 
 with col1:
-    st.metric("Caudal Actual", f"{caudal} m3/h")
-    st.write(f"**Estado Válvula Entrada:** {estado_valvula}")
-    if alerta_seguridad:
-        st.error("⚠️ ALERTA: Turbidez crítica detectada")
+    st.metric("Caudal de Entrada", f"{caudal} m³/h")
+    st.write(f"**Válvula:** `{estado_valvula}`")
+    if alerta:
+        st.error("🚨 CRÍTICO: Turbidez fuera de rango")
 
 with col2:
-    st.metric("Turbidez", f"{turbidez} NTU", delta=f"{turbidez-umbral_critico}" if turbidez > umbral_critico else None, delta_color="inverse")
+    st.metric("Turbidez detectada", f"{turbidez} NTU")
+    # Barra visual de nivel de suciedad
     st.progress(min(turbidez / 150, 1.0))
 
 with col3:
-    st.metric("Dosificación Coagulante", f"{dosificacion:.2f} L/h")
-    st.info(f"Consumo Energético Est.: {consumo_actual} kWh/mes")
+    st.metric("Dosificación Químicos", f"{dosificacion:.2f} L/h")
+    st.metric("Consumo Proyectado", f"{consumo_actual} kWh/mes", 
+              delta=f"-{consumo_base - consumo_actual} kWh" if tarifa_valle else None)
 
 # --- GRÁFICO DE RESILIENCIA (Parte C) ---
 st.divider()
-st.subheader("📈 Simulación de Resiliencia y Niveles")
+st.subheader("📊 Monitoreo de Resiliencia (Simulación de Sequía)")
+data = pd.DataFrame({
+    'Minutos': np.arange(60),
+    'Nivel Tanque (%)': np.random.uniform(85, 95, 60)
+})
+# Simular caída si el caudal es bajo
+if caudal < 150:
+    data['Nivel Tanque (%)'] = data['Nivel Tanque (%)'] - 20
+    st.warning("⚠️ Detectada baja presión por sequía. Ajustando Variadores de Frecuencia.")
 
-# Simulación de datos históricos
-chart_data = pd.DataFrame(
-    np.random.randn(20, 2) / 10 + [caudal, 85],
-    columns=['Caudal Real-time', 'Nivel Tanque (%)']
-)
-
-st.line_chart(chart_data)
+st.line_chart(data, x='Minutos', y='Nivel Tanque (%)')
 
 # --- REPORTE DE SOSTENIBILIDAD (Parte D) ---
-st.divider()
-st.subheader("🍃 ROI Ambiental y Economía Circular")
-ahorro_kwh = 10000 - consumo_actual
-co2_evitado = ahorro_kwh * 0.25
-
-c_eco1, c_eco2 = st.columns(2)
-with c_eco1:
-    st.success(f"CO2 evitado este mes: {co2_evitado} kg")
-with c_eco2:
-    st.write("**Estatus de Filtros:**")
-    st.write("Presión Diferencial: 1.2 bar (Estado Óptimo)")
+with st.expander("🍀 Ver Informe de Impacto Ambiental"):
+    ahorro = consumo_base - consumo_actual
+    co2 = ahorro * 0.25
+    st.write(f"**Reducción de Huella de Carbono:** {co2} kg de CO2/mes")
+    st.write("**Economía Circular:** Optimización de lodos mediante dosificación precisa.")
